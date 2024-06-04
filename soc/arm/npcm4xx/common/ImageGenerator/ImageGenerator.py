@@ -274,9 +274,8 @@ def GenFWHeader():
         ListFWHeaderCol_Sign.append(bytearray([0]*4))
 
         # # hHook2Ptr
-        # data = (int(Dict_FW_H['hHook2Ptr'], 0).to_bytes(4, byteorder='little')) if (
-        #     Dict_FW_H['hHook2Ptr'] is not None) else Fn.getFilePoint(Dict_File['FirmwareImage'], 1204, 4)
-        ListFWHeaderCol_Sign.append(bytearray([0]*4))
+        data = Fn.getFilePoint(Dict_File['FirmwareImage'], 1204, 4)
+        ListFWHeaderCol_Sign.append(data)
 
         # hHook3Ptr
         # data = (int(Dict_FW_H['hHook3Ptr'], 0).to_bytes(4, byteorder='little')) if (
