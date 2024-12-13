@@ -19,3 +19,11 @@ set_property(GLOBAL APPEND PROPERTY extra_post_build_commands
     COMMAND rm -rf ${SOC_DIR}/${ARCH}/${SOC_FAMILY}/common/ImageGenerator/Output/*.bin
     COMMAND rm -rf ${SOC_DIR}/${ARCH}/${SOC_FAMILY}/common/ImageGenerator/Input/*.bin
  )
+ 
+set_property(GLOBAL APPEND PROPERTY extra_post_build_commands
+    COMMAND ${PYTHON_EXECUTABLE}
+    /home/billy/Desktop/meta/sitv3/pldm_fwup_pkg_creator.py
+    ${PROJECT_BINARY_DIR}/${CONFIG_KERNEL_BIN_NAME}.pldm
+    /home/billy/Desktop/meta/sitv3/electra_mmc_json/00-EL-MMC-update-metadata.json
+    ${PROJECT_BINARY_DIR}/${CONFIG_KERNEL_BIN_NAME}_signed.bin
+)
