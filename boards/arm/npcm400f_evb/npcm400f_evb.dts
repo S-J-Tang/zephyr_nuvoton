@@ -612,3 +612,7 @@
 		pin-offset = <120>;
 	};
 };
+
+&c2h {
+	status = "okay";
+};
