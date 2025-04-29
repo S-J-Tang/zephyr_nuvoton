@@ -1077,7 +1077,7 @@ static int i2c_npcm4xx_transfer(const struct device *dev, struct i2c_msg *msgs,
 	}
 
 	if (bus_busy) {
-		inst->SMBnCST &= ~BIT(NPCM4XX_SMBnCST_BB);
+		inst->SMBnCST |= BIT(NPCM4XX_SMBnCST_BB);
 		i2c_npcm4xx_mutex_unlock(dev);
 		return -EAGAIN;
 	}
