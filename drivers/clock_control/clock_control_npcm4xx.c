@@ -63,30 +63,43 @@ static inline int npcm4xx_clock_control_off(const struct device *dev,
 }
 
 static int npcm4xx_clock_control_get_subsys_rate(const struct device *dev,
-					      clock_control_subsys_t sub_system,
-					      uint32_t *rate)
+						 clock_control_subsys_t sub_system, uint32_t *rate)
 {
-	ARG_UNUSED(dev);
+	struct cdcg_reg *const inst_cdcg = HAL_CDCG_INST(dev);
 	struct npcm4xx_clk_cfg *clk_cfg = (struct npcm4xx_clk_cfg *)(sub_system);
+
+	/* Get divider */
+	uint32_t hfcgp = inst_cdcg->HFCGP;
+	uint32_t hfcbcd = inst_cdcg->HFCBCD;
+	uint32_t hfcbcd1 = inst_cdcg->HFCBCD1;
+	uint32_t hfcbcd2 = inst_cdcg->HFCBCD2;
+
+	uint32_t ahb6_div = hfcgp & 0x3;
+	uint32_t fpred = (hfcgp >> 4) & 0xF;
+	uint32_t apb1_div = hfcbcd & 0xF;
+	uint32_t apb2_div = (hfcbcd >> 4) & 0xF;
+	uint32_t fiu_div = hfcbcd1 & 0x3;
+	uint32_t apb3_div = hfcbcd2 & 0xF;
+	uint32_t core_clk = OFMCLK / (fpred + 1);
 
 	switch (clk_cfg->bus) {
 	case NPCM4XX_CLOCK_BUS_APB1:
-		*rate = NPCM4XX_APB_CLOCK(1);
+		*rate = APBSRC_CLK / (apb1_div + 1);
 		break;
 	case NPCM4XX_CLOCK_BUS_APB2:
-		*rate = NPCM4XX_APB_CLOCK(2);
+		*rate = APBSRC_CLK / (apb2_div + 1);
 		break;
 	case NPCM4XX_CLOCK_BUS_APB3:
-		*rate = NPCM4XX_APB_CLOCK(3);
+		*rate = APBSRC_CLK / (apb3_div + 1);
 		break;
 	case NPCM4XX_CLOCK_BUS_AHB6:
-		*rate = CORE_CLK/(AHB6DIV_VAL + 1);
+		*rate = core_clk / (ahb6_div + 1);
 		break;
 	case NPCM4XX_CLOCK_BUS_FIU:
-		*rate = CORE_CLK/(FIUDIV_VAL + 1);
+		*rate = core_clk / (fiu_div + 1);
 		break;
 	case NPCM4XX_CLOCK_BUS_CORE:
-		*rate = CORE_CLK;
+		*rate = core_clk;
 		break;
 	case NPCM4XX_CLOCK_BUS_LFCLK:
 		*rate = LFCLK;
