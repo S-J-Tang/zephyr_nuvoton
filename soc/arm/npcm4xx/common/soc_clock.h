@@ -66,10 +66,14 @@ struct npcm4xx_clk_cfg {
 /* AHB6 clock */
 #define AHB6DIV_VAL 0 /* AHB6_CLK = CORE_CLK */
 /* FIU clock divider */
+#if DT_NODE_HAS_PROP(DT_NODELABEL(pcc), fiu_prescaler)
+#define FIUDIV_VAL (DT_PROP(DT_NODELABEL(pcc), fiu_prescaler) - 1)
+#else
 #if (CORE_CLK > 50000000)
 #define FIUDIV_VAL 1 /* FIU_CLK = CORE_CLK/2 */
 #else
 #define FIUDIV_VAL 0 /* FIU_CLK = CORE_CLK */
+#endif
 #endif
 
 /* Get APB clock freq */
