@@ -205,6 +205,22 @@ properties:
       - 9
       - 10
 
+  fiu-prescaler:
+    type: int
+    description: |
+      FIU prescaler. It sets the FIU_CLK, by dividing
+      CORE_CLK and needs to meet the following requirements.
+      - If CORE_CLK > 50MHz, FIU_CLK must be set to
+        <= CORE_CLK / 2.
+      = Only the following values are allowed:
+        1, FIU_CLK = CORE_CLK
+        2, FIU_CLK = CORE_CLK / 2
+        4, FIU_CLK = CORE_CLK / 4
+    enum:
+      - 1
+      - 2
+      - 4
+
   ram-pd-depth:
     type: int
     enum:
