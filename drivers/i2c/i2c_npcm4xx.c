@@ -74,6 +74,8 @@ struct i2c_npcm4xx_config {
 	uint32_t default_bitrate;
 	uint8_t irq;                    /* i2c controller irq */
 	uint32_t wait_free_time;
+	uint32_t scllt;
+	uint32_t sclht;
 };
 
 /*rx_buf and tx_buf address must 4-align for DMA */
@@ -320,8 +322,13 @@ static void i2c_npcm4xx_set_baudrate(const struct device *dev, uint32_t bus_freq
 		inst->SMBnCTL3 |= BIT(NPCM4XX_SMBnCTL3_400K_MODE);
 		SET_FIELD(inst->SMBnCTL2, NPCM4XX_SMBnCTL2_SCLFRQ60_FIELD, 0);
 		SET_FIELD(inst->SMBnCTL3, NPCM4XX_SMBnCTL3_SCLFRQ87_FIELD, 0);
-		inst->SMBnSCLHT = reg_tmp - 3;
-		inst->SMBnSCLLT = reg_tmp - 1;
+		if ( (config->scllt == 0) || (config->sclht == 0) ) {
+			inst->SMBnSCLHT = reg_tmp - 3;
+			inst->SMBnSCLLT = reg_tmp - 1;
+		} else {
+			inst->SMBnSCLHT = config->sclht;
+			inst->SMBnSCLLT = config->scllt;
+		}
 
 		/* Set HLDT (48MHz, HLDT = 17, Hold Time = 360ns) */
 		if (data->source_clk >= 40000000) {
@@ -1199,6 +1206,10 @@ static const struct i2c_driver_api i2c_npcm4xx_driver_api = {
 		.irq = DT_INST_IRQN(inst),					 \
 		.wait_free_time = DT_INST_PROP_OR(inst, wait_free_time,		 \
 				  I2C_WAITING_FREE_TIME),	 		 \
+		.scllt = DT_INST_PROP_OR(inst, scllt,		                 \
+				  0),	 		                         \
+		.sclht = DT_INST_PROP_OR(inst, sclht,		                 \
+				  0),	 		                         \
 	};									 \
 										 \
 	static struct i2c_npcm4xx_data i2c_npcm4xx_data_##inst;			 \

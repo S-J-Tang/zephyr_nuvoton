@@ -18,3 +18,11 @@ properties:
         type: int
         required: false
         description: time in unit of ms to wait for the bus to be idle
+    scllt:
+        type: int
+        required: false
+        description: value from 5 to 255
+    sclht:
+        type: int
+        required: false
+        description: value from 5 to 255
