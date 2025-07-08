@@ -1768,6 +1768,12 @@ I3C_ErrCode_Enum hal_I3C_Start_IBI(I3C_TASK_INFO_t *pTaskInfo)
 	pTask = pTaskInfo->pTask;
 	pFrame = &pTask->pFrameList[pTask->frame_idx];
 
+	if (I3C_GET_REG_STATUS(port) & I3C_STATUS_IBIDIS_MASK) {
+			LOG_WRN("IBI is disabled, can't generate IBI\n");
+			api_I3C_Slave_End_Request((uint32_t)pTask);
+			return I3C_ERR_OK;
+	}
+
 	ctrl = I3C_GET_REG_CTRL(port);
 	ctrl &= ~(I3C_CTRL_IBIDATA_MASK | I3C_CTRL_EXTDATA_MASK | I3C_CTRL_EVENT_MASK);
 
@@ -1802,6 +1808,7 @@ I3C_ErrCode_Enum hal_I3C_Start_Master_Request(I3C_TASK_INFO_t *pTaskInfo)
 {
 	I3C_PORT_Enum port;
 	I3C_DEVICE_INFO_t *pDevice;
+	I3C_TRANSFER_TASK_t *pTask;
 	__u8 pdma_ch;
 	uint32_t ctrl;
 
@@ -1811,6 +1818,13 @@ I3C_ErrCode_Enum hal_I3C_Start_Master_Request(I3C_TASK_INFO_t *pTaskInfo)
 	port = pTaskInfo->Port;
 	if (port >= I3C_PORT_MAX)
 		return I3C_ERR_PARAMETER_INVALID;
+
+	pTask = pTaskInfo->pTask;
+	if (I3C_GET_REG_STATUS(port) & I3C_STATUS_MRDIS_MASK) {
+			LOG_WRN("Master Request is disabled, can't generate Master Request\n");
+			api_I3C_Slave_End_Request((uint32_t)pTask);
+			return I3C_ERR_OK;
+	}
 
 	pDevice = api_I3C_Get_INODE(port);
 	if ((pDevice->mode != I3C_DEVICE_MODE_SLAVE_ONLY) &&
@@ -1837,6 +1851,7 @@ I3C_ErrCode_Enum hal_I3C_Start_HotJoin(I3C_TASK_INFO_t *pTaskInfo)
 {
 	I3C_PORT_Enum port;
 	I3C_DEVICE_INFO_t *pDevice;
+	I3C_TRANSFER_TASK_t *pTask;
 	__u8 pdma_ch;
 	uint32_t ctrl;
 
@@ -1846,6 +1861,14 @@ I3C_ErrCode_Enum hal_I3C_Start_HotJoin(I3C_TASK_INFO_t *pTaskInfo)
 	port = pTaskInfo->Port;
 	if (port >= I3C_PORT_MAX)
 		return I3C_ERR_PARAMETER_INVALID;
+
+	/* Exit if Hot-Join disabled */
+	pTask = pTaskInfo->pTask;
+	if (I3C_GET_REG_STATUS(port) & I3C_STATUS_HJDIS_MASK) {
+			LOG_WRN("HotJoin: HJDIS is set, can't generate Hot-Join\n");
+			api_I3C_Slave_End_Request((uint32_t)pTask);
+			return I3C_ERR_OK;
+	}
 
 	pDevice = api_I3C_Get_INODE(port);
 	if ((pDevice->mode != I3C_DEVICE_MODE_SLAVE_ONLY) &&
@@ -3703,6 +3726,20 @@ void I3C_Slave_ISR(uint8_t I3C_IF)
 		}
 
 		I3C_SET_REG_STATUS(I3C_IF, I3C_STATUS_DACHG_MASK);
+
+			/* Stop hot-join when dynamic address changed */
+			if ((I3C_GET_REG_CTRL(I3C_IF) &  I3C_CTRL_EVENT_MASK) == I3C_CTRL_EVENT_HotJoin) {
+					LOG_WRN("DACHG, hot-join\n");
+					I3C_SET_REG_CTRL(I3C_IF, I3C_CTRL_EVENT_None);
+
+					pTask = pDevice->pTaskListHead;
+					pTaskInfo = pTask->pTaskInfo;
+
+					if (pTaskInfo != NULL) {
+							pTaskInfo->result = I3C_ERR_OK;
+							api_I3C_Slave_End_Request((uint32_t)pTask);
+					}
+			}
 
 		intmasked &= ~I3C_INTMASKED_DACHG_MASK;
 		if (!intmasked) {
