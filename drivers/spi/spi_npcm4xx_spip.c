@@ -9,6 +9,7 @@
 LOG_MODULE_REGISTER(spip_npcm4xx);
 
 #include <drivers/clock_control.h>
+#include <dt-bindings/clock/npcm4xx_clock.h>
 #include <drivers/spi.h>
 #include <soc.h>
 #include "spi_context.h"
@@ -19,11 +20,13 @@ struct npcm4xx_spip_config {
 	uintptr_t base;
 	/* clock configuration */
 	struct npcm4xx_clk_cfg clk_cfg;
+	struct npcm4xx_clk_cfg clk_cfg_control;
 };
 
 /* Device run time data */
 struct npcm4xx_spip_data {
 	struct spi_context ctx;
+	uint32_t mclk;
 	uint32_t apb3;
 	/* read/write init flags */
 	int rw_init;
@@ -61,6 +64,8 @@ static int spip_npcm4xx_configure(const struct device *dev,
 	struct npcm4xx_spip_data *data = dev->data;
 	struct spip_reg *const inst = HAL_INSTANCE(dev);
 	uint32_t u32Div = 0;
+	uint32_t target_freq;
+	uint32_t source_clk;
 	int ret = 0;
 
 	if (SPI_WORD_SIZE_GET(config->operation) != 8) {
@@ -73,15 +78,15 @@ static int spip_npcm4xx_configure(const struct device *dev,
 
 	if (SPI_MODE_GET(config->operation) & SPI_MODE_CPOL) {
 		inst->CTL |= BIT(NPCM4XX_CTL_CLKPOL);
-		if (SPI_MODE_GET(config->operation) & SPI_MODE_CPHA) {
-			inst->CTL &= ~BIT(NPCM4XX_CTL_TXNEG);
-			inst->CTL &= ~BIT(NPCM4XX_CTL_RXNEG);
-		} else {
-			inst->CTL |= BIT(NPCM4XX_CTL_TXNEG);
-			inst->CTL |= BIT(NPCM4XX_CTL_RXNEG);
-		}
 	} else {
 		inst->CTL &= ~BIT(NPCM4XX_CTL_CLKPOL);
+	}
+	if (SPI_MODE_GET(config->operation) & SPI_MODE_CPHA) {
+		inst->CTL &= ~BIT(NPCM4XX_CTL_TXNEG);
+		inst->CTL |= BIT(NPCM4XX_CTL_RXNEG);
+	} else {
+		inst->CTL |= BIT(NPCM4XX_CTL_TXNEG);
+		inst->CTL &= ~BIT(NPCM4XX_CTL_RXNEG);
 	}
 
 	if (config->operation & SPI_TRANSFER_LSB) {
@@ -99,18 +104,27 @@ static int spip_npcm4xx_configure(const struct device *dev,
 
 	/* Set Bus clock */
 	if (config->frequency != 0) {
-		if (config->frequency <= data->apb3) {
-			u32Div = (data->apb3 / config->frequency) - 1;
-			if (data->apb3 % config->frequency) {
-				u32Div += 1;
-			}
-			if (u32Div > 0xFF) {
-				u32Div = 0xFF;
-			}
+		target_freq = config->frequency;
+		source_clk = data->mclk;
+
+		/* Clamp frequency to maximum supported by APB3 */
+		if (target_freq > data->apb3) {
+			LOG_WRN("Frequency %d is larger than APB3 clock %d, clamping to APB3",
+				target_freq, data->apb3);
+			target_freq = data->apb3;
+		}
+
+		/* Calculate divider with proper rounding */
+		u32Div = (source_clk + target_freq - 1) / target_freq - 1;
+
+		/* Clamp divider to maximum supported value */
+		if (u32Div > 0xF) {
+			LOG_WRN("Divider %d is larger than maximum 15, clamping to 15", u32Div);
+			u32Div = 0xF;
 		}
 	}
 
-	inst->CLKDIV = (inst->CLKDIV & ~0xFF) | u32Div;
+	inst->CLKDIV = (inst->CLKDIV & ~0xF) | u32Div;
 
 	/* spip enable */
 	inst->CTL |= BIT(NPCM4XX_CTL_SPIEN);
@@ -232,7 +246,8 @@ static int spip_npcm4xx_init(const struct device *dev)
 	struct npcm4xx_spip_data *data = dev->data;
 	const struct device *const clk_dev =
 		device_get_binding(NPCM4XX_CLK_CTRL_NAME);
-	uint32_t spip_apb3;
+	uint32_t mclk;
+	uint32_t apb3;
 	int ret;
 
 	if (!device_is_ready(clk_dev)) {
@@ -240,22 +255,27 @@ static int spip_npcm4xx_init(const struct device *dev)
 		return -ENODEV;
 	}
 	/* Turn on device clock first and get source clock freq. */
-	ret = clock_control_on(clk_dev,
-			       (clock_control_subsys_t)&cfg->clk_cfg);
+	ret = clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->clk_cfg);
 	if (ret < 0) {
 		LOG_ERR("Turn on SPIP clock fail %d", ret);
 		return ret;
 	}
 
-	ret = clock_control_get_rate(clk_dev, (clock_control_subsys_t *)
-				     &cfg->clk_cfg, &spip_apb3);
-
+	/* Get MCLK */
+	ret = clock_control_get_rate(clk_dev, (clock_control_subsys_t *)&cfg->clk_cfg, &mclk);
 	if (ret < 0) {
-		LOG_ERR("Get ITIM clock rate error %d", ret);
+		LOG_ERR("Get MCLK clock rate error %d", ret);
 		return ret;
 	}
+	data->mclk = mclk;
 
-	data->apb3 = spip_apb3;
+	/* Get APB3 as control source */
+	ret = clock_control_get_rate(clk_dev, (clock_control_subsys_t *)&cfg->clk_cfg_control, &apb3);
+	if (ret < 0) {
+		LOG_ERR("Get APB3 clock rate error %d", ret);
+		return ret;
+	}
+	data->apb3 = apb3;
 
 	spi_context_unlock_unconditionally(&data->ctx);
 	return 0;
@@ -415,7 +435,8 @@ static const struct spi_driver_api spip_npcm4xx_driver_api = {
 
 static const struct npcm4xx_spip_config spip_npcm4xx_config = {
 	.base = DT_INST_REG_ADDR(0),
-	.clk_cfg = NPCM4XX_DT_CLK_CFG_ITEM(0),
+	.clk_cfg = NPCM4XX_DT_CLK_CFG_ITEM_BY_IDX(0, 0) // mclk
+	.clk_cfg_control = NPCM4XX_DT_CLK_CFG_ITEM_BY_IDX(0, 1) // apb3
 };
 
 static struct npcm4xx_spip_data spip_npcm4xx_dev_data = {

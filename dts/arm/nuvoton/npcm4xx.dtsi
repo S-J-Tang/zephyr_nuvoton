@@ -562,7 +562,8 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0x40016000 0x100>;
-			clocks = <&pcc NPCM4XX_CLOCK_BUS_APB3 NPCM4XX_PWDWN_CTL4 7>;
+			clocks = <&pcc NPCM4XX_CLOCK_BUS_MCLK NPCM4XX_PWDWN_CTL4 7>,
+					<&pcc NPCM4XX_CLOCK_BUS_APB3 NPCM4XX_PWDWN_CTL4 7>;
 			spi-ctrl-caps-mask = <0x000f0f0c>;
 			pinctrl-0 = <&pinctrl_spip1_default &pinctrl_spip1_quad>;
 			label = "SPIP";
