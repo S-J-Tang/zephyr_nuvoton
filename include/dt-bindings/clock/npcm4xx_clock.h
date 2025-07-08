@@ -18,6 +18,7 @@
 #define NPCM4XX_CLOCK_BUS_APB4        8
 #define NPCM4XX_CLOCK_BUS_AHB6        9
 #define NPCM4XX_CLOCK_BUS_FMCLK       10
+#define NPCM4XX_CLOCK_BUS_MCLK        11
 
 /* clock enable/disable references */
 #define NPCM4XX_PWDWN_CTL0            0
