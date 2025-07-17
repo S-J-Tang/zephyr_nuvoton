@@ -64,6 +64,7 @@ struct spi_nor_data {
 	struct k_sem sem;
 	const struct device *spi;
 	struct spi_config spi_cfg;
+	struct spi_cs_control cs_ctrl;
 
 	/* Miscellaneous flags */
 
@@ -1733,6 +1734,12 @@ static int spi_nor_configure(const struct device *dev)
 		goto end;
 	}
 
+	if (data->cs_ctrl.gpio_dev != NULL) {
+		data->spi_cfg.cs = &data->cs_ctrl;
+	} else {
+		data->spi_cfg.cs = NULL;
+	}
+
 	/* now the spi bus is configured, we can verify SPI
 	 * connectivity by reading the JEDEC ID.
 	 */
@@ -1928,6 +1935,14 @@ static const struct flash_driver_api spi_nor_api = {
 	};	\
 	static struct spi_nor_data spi_nor_data_##n = {	\
 		.dev_name = DT_INST_BUS_LABEL(n),	\
+		IF_ENABLED(DT_INST_SPI_DEV_HAS_CS_GPIOS(n), ( \
+			.cs_ctrl = {	\
+				.gpio_dev = DEVICE_DT_GET(DT_INST_SPI_DEV_CS_GPIOS_CTLR(n)),	\
+				.gpio_pin = DT_INST_SPI_DEV_CS_GPIOS_PIN(n),	\
+				.gpio_dt_flags = DT_INST_SPI_DEV_CS_GPIOS_FLAGS(n),	\
+				.delay = CONFIG_SPI_NOR_CS_WAIT_DELAY,	\
+			},	\
+		)) \
 		.spi_cfg = {	\
 			.frequency = DT_INST_PROP(n, spi_max_frequency),	\
 			.operation = SPI_WORD_SET(8),	\
