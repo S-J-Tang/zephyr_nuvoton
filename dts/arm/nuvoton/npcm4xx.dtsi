@@ -566,6 +566,8 @@
 					<&pcc NPCM4XX_CLOCK_BUS_APB3 NPCM4XX_PWDWN_CTL4 7>;
 			spi-ctrl-caps-mask = <0x000f0f0c>;
 			pinctrl-0 = <&pinctrl_spip1_default &pinctrl_spip1_quad>;
+			cs-sw;
+			cs-gpios = <&gpio7 3 GPIO_ACTIVE_LOW>;
 			label = "SPIP";
 			status = "disabled";
 

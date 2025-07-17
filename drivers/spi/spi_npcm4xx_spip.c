@@ -62,28 +62,57 @@ struct npcm4xx_spip_data {
 	struct spi_nor_op_info write_op_info;
 	uint8_t bytes_per_frame;
 	uint8_t access_mode;
+	/* CS control */
+	bool cs_sw;
 };
 
 /* Driver convenience defines */
 #define HAL_INSTANCE(dev)									\
 	((struct spip_reg *)((const struct npcm4xx_spip_config *)(dev)->config)->base)
 
-static void SPI_SET_SS0_HIGH(const struct device *dev)
+static inline bool spi_npcm_spip_is_cs_gpio73(const struct device *dev,
+						  const struct spi_config *spi_cfg)
 {
-	struct spip_reg *const inst = HAL_INSTANCE(dev);
+	/* Check gpio pin is set as GPIO73 */
+	if (spi_cfg->cs && spi_cfg->cs->gpio_dev && spi_cfg->cs->gpio_pin == 3 &&
+	    spi_cfg->cs->gpio_dev == DEVICE_DT_GET(DT_NODELABEL(gpio7))) {
+		return true;
+	}
 
-	inst->SSCTL &= ~BIT(NPCM4XX_SSCTL_AUTOSS);
-	inst->SSCTL |= BIT(NPCM4XX_SSCTL_SSACTPOL);
-	inst->SSCTL |= BIT(NPCM4XX_SSCTL_SS);
+	return false;
 }
 
-static void SPI_SET_SS0_LOW(const struct device *dev)
+static inline void spi_npcm_spip_cs_control(const struct device *dev,
+					    const struct spi_config *spi_cfg, bool on)
 {
 	struct spip_reg *const inst = HAL_INSTANCE(dev);
+	struct npcm4xx_spip_data *data = dev->data;
+	struct spi_context *ctx = &data->ctx;
 
-	inst->SSCTL &= ~BIT(NPCM4XX_SSCTL_AUTOSS);
-	inst->SSCTL &= ~BIT(NPCM4XX_SSCTL_SSACTPOL);
-	inst->SSCTL |= BIT(NPCM4XX_SSCTL_SS);
+	/*
+	 * The GPIO73/SPIP1_CS is bundled with SPIP1_CLK, SPIP1_MOSI, SPIP1_DIO1,
+	 * it cannot be set individually. So if the software CS is GPIO73, we should
+	 * use hardware CS control.
+	 */
+	if ((data->cs_sw) && (ctx->config->cs && ctx->config->cs->gpio_dev) &&
+	    ((!spi_npcm_spip_is_cs_gpio73(dev, spi_cfg)))) {
+		/* SW CS pin */
+		LOG_DBG("sw cs control, %s pin %d",
+			ctx->config->cs->gpio_dev->name, ctx->config->cs->gpio_pin);
+		spi_context_cs_control(ctx, on);
+	} else {
+		/* HW CS pin */
+		LOG_DBG("hw cs control");
+		if (on) {
+			/* Set active, active high/low depend on SSACTPOL */
+			inst->SSCTL |= BIT(NPCM4XX_SSCTL_SS);
+		} else {
+			if (spi_cfg->operation & SPI_HOLD_ON_CS) {
+				return;
+			}
+			inst->SSCTL &= ~BIT(NPCM4XX_SSCTL_SS);
+		}
+	}
 }
 
 static int spip_npcm4xx_configure(const struct device *dev,
@@ -107,6 +136,7 @@ static int spip_npcm4xx_configure(const struct device *dev,
 		LOG_ERR("Loopback mode is not supported");
 		return -ENOTSUP;
 	}
+	data->ctx.config = config;
 
 	/* Get the frame length */
 	frame_size = SPI_WORD_SIZE_GET(operation);
@@ -193,12 +223,20 @@ static int spip_npcm4xx_configure(const struct device *dev,
 		}
 	}
 
+	/* Set CS */
+	if ((data->cs_sw) && (!spi_npcm_spip_is_cs_gpio73(dev, config))) {
+		spi_context_cs_configure(&data->ctx);
+	}
+
 	/* Active high CS logic */
 	if (operation & SPI_CS_ACTIVE_HIGH) {
 		inst->SSCTL |= BIT(NPCM4XX_SSCTL_SSACTPOL);
 	} else {
 		inst->SSCTL &= ~BIT(NPCM4XX_SSCTL_SSACTPOL);
 	}
+
+	/* Disable AUTOSS */
+	inst->SSCTL &= ~BIT(NPCM4XX_SSCTL_AUTOSS);
 
 	/* Set Bus clock */
 	if (config->frequency != 0) {
@@ -223,8 +261,6 @@ static int spip_npcm4xx_configure(const struct device *dev,
 	}
 
 	inst->CLKDIV = (inst->CLKDIV & ~0xF) | u32Div;
-
-	data->ctx.config = config;
 
 	return ret;
 }
@@ -347,7 +383,8 @@ static int spip_npcm4xx_transceive(const struct device *dev,
 	inst->FIFOCTL |= BIT(NPCM4XX_FIFOCTL_TXRST);
 	inst->CTL |= BIT(NPCM4XX_CTL_SPIEN);
 
-	SPI_SET_SS0_LOW(dev);
+	/* set active true */
+	spi_npcm_spip_cs_control(dev, config, true);
 
 	do {
 		ret = spi_npcm_spip_xfer_frame(dev);
@@ -355,7 +392,8 @@ static int spip_npcm4xx_transceive(const struct device *dev,
 			break;
 	} while (spi_npcm_spip_transfer_ongoing(data));
 
-	SPI_SET_SS0_HIGH(dev);
+	/* set active false */
+	spi_npcm_spip_cs_control(dev, config, false);
 
 	/* spip disable */
 	inst->CTL &= ~BIT(NPCM4XX_CTL_SPIEN);
@@ -454,7 +492,8 @@ static void spi_nor_npcm4xx_spip_fifo_transceive(const struct device *dev,
 	inst->FIFOCTL |= BIT(NPCM4XX_FIFOCTL_TXRST);
 	inst->FIFOCTL |= BIT(NPCM4XX_FIFOCTL_RXRST);
 
-	SPI_SET_SS0_LOW(dev);
+	/* set active true */
+	spi_npcm_spip_cs_control(dev, spi_cfg, true);
 
 	/* send command */
 	spi_npcm4xx_spip_write_data(dev, (uint32_t)normal_op_info->opcode);
@@ -495,7 +534,11 @@ static void spi_nor_npcm4xx_spip_fifo_transceive(const struct device *dev,
 			/* write dummy data out*/
 			spi_npcm4xx_spip_write_data(dev, dummy_write);
 			/* wait received data */
-			while((inst->STATUS & BIT(NPCM4XX_STATUS_RXEMPTY)));
+			if (WAIT_FOR(!IS_BIT_SET(inst->STATUS, NPCM4XX_STATUS_RXEMPTY),
+				     SPI_NPCM_SPIP_WAIT_STATUS_TIMEOUT_US, NULL) == false) {
+				LOG_ERR("Wait for RX data timeout");
+				goto spi_nor_normal_done;
+			}
 
 			*(buf_data + index) = (uint8_t)inst->RX;
 		}
@@ -510,7 +553,8 @@ static void spi_nor_npcm4xx_spip_fifo_transceive(const struct device *dev,
 
 spi_nor_normal_done:
 
-	SPI_SET_SS0_HIGH(dev);
+	/* set active false */
+	spi_npcm_spip_cs_control(dev, spi_cfg, false);
 
 	/* spip disable */
 	inst->CTL &= ~BIT(NPCM4XX_CTL_SPIEN);
@@ -590,6 +634,7 @@ static const struct npcm4xx_spip_config spip_npcm4xx_config = {
 
 static struct npcm4xx_spip_data spip_npcm4xx_dev_data = {
 	SPI_CONTEXT_INIT_LOCK(spip_npcm4xx_dev_data, ctx),
+	.cs_sw = DT_INST_PROP(0, cs_sw),
 };
 
 
