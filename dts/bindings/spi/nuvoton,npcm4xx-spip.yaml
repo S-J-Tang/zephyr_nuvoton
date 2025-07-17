@@ -26,3 +26,11 @@ properties:
       bit 16: disable 1-1-4
       bit 17: disable 1-4-4
       bit 18: disable 4-4-4
+  cs-sw:
+    type: boolean
+    required: false
+    description: |
+      If true, the controller will use software controlled chip select.
+      If false, the controller will use hardware controlled chip select.
+      To support multiple slaves, this property must be set to true.
+      Default is false.
