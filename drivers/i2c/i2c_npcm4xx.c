@@ -9,6 +9,7 @@
 #include <drivers/clock_control.h>
 #include <dt-bindings/i2c/i2c.h>
 #include <drivers/i2c.h>
+#include "drivers/i2c_npcm4xx.h"
 #include <soc.h>
 
 #include <logging/log.h>
@@ -107,6 +108,47 @@ struct i2c_npcm4xx_data {
 #define I2C_DRV_DATA(dev) ((struct i2c_npcm4xx_data *)(dev)->data)
 
 #define I2C_INSTANCE(dev) (struct i2c_reg *)(I2C_DRV_CONFIG(dev)->base)
+
+bool is_i2c_npcm_device_master_status_idle(const struct device *dev)
+{
+	if (dev == NULL) {
+		LOG_ERR("%s dev null", __func__);
+		return false;
+	}
+
+	struct i2c_npcm4xx_data *const data = I2C_DRV_DATA(dev);
+
+	return (data->master_oper_state == I2C_NPCM4XX_OPER_STA_IDLE);
+}
+
+int i2c_npcm_device_disable(const struct device *dev)
+{
+	int loop, loop_limit = 30;
+
+	if (dev == NULL) {
+		LOG_ERR("%s dev null", __func__);
+		return -EBUSY;
+	}
+
+	struct i2c_npcm4xx_data *const data = I2C_DRV_DATA(dev);
+	struct i2c_reg *const inst = I2C_INSTANCE(dev);
+
+	for (loop = 0; loop < loop_limit; loop ++) {
+		if (data->master_oper_state != I2C_NPCM4XX_OPER_STA_IDLE) {
+			k_busy_wait(1000);
+		} else {
+			inst->SMBnCTL2 &= ~BIT(NPCM4XX_SMBnCTL2_ENABLE);
+			break;
+		}
+	}
+
+	if (loop >= loop_limit) {
+		LOG_ERR("%s dev still busy!", __func__);
+		return -EBUSY;
+	}
+
+	return 0;
+}
 
 
 /* This macro should be set only when in Master mode or when requesting Master mode.
