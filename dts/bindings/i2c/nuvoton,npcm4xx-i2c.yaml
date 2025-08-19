@@ -26,3 +26,8 @@ properties:
         type: int
         required: false
         description: value from 5 to 255
+    multi-master:
+        type: int
+        required: false
+        description: |
+            i2c multi-master support. Default value is disabled.
