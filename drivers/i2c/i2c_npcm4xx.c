@@ -77,6 +77,7 @@ struct i2c_npcm4xx_config {
 	uint32_t wait_free_time;
 	uint32_t scllt;
 	uint32_t sclht;
+	uint8_t multi_master;
 };
 
 /*rx_buf and tx_buf address must 4-align for DMA */
@@ -1135,9 +1136,17 @@ static int i2c_npcm4xx_transfer(const struct device *dev, struct i2c_msg *msgs,
 	}
 
 	if (bus_busy) {
-		inst->SMBnCST |= BIT(NPCM4XX_SMBnCST_BB);
-		i2c_npcm4xx_mutex_unlock(dev);
-		return -EAGAIN;
+		if (!config->multi_master) {
+			ret = i2c_npcm4xx_recover_bus(dev);
+			if (ret) {
+				i2c_npcm4xx_mutex_unlock(dev);
+				return ret;
+			}
+		} else {
+			inst->SMBnCST |= BIT(NPCM4XX_SMBnCST_BB);
+			i2c_npcm4xx_mutex_unlock(dev);
+			return -EAGAIN;
+		}
 	}
 
 	/* prepare data to transfer */
@@ -1252,6 +1261,7 @@ static const struct i2c_driver_api i2c_npcm4xx_driver_api = {
 				  0),	 		                         \
 		.sclht = DT_INST_PROP_OR(inst, sclht,		                 \
 				  0),	 		                         \
+		.multi_master = DT_INST_PROP_OR(inst, multi_master, 0),          \
 	};									 \
 										 \
 	static struct i2c_npcm4xx_data i2c_npcm4xx_data_##inst;			 \
