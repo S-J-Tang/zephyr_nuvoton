@@ -110,47 +110,6 @@ struct i2c_npcm4xx_data {
 
 #define I2C_INSTANCE(dev) (struct i2c_reg *)(I2C_DRV_CONFIG(dev)->base)
 
-bool is_i2c_npcm_device_master_status_idle(const struct device *dev)
-{
-	if (dev == NULL) {
-		LOG_ERR("%s dev null", __func__);
-		return false;
-	}
-
-	struct i2c_npcm4xx_data *const data = I2C_DRV_DATA(dev);
-
-	return (data->master_oper_state == I2C_NPCM4XX_OPER_STA_IDLE);
-}
-
-int i2c_npcm_device_disable(const struct device *dev)
-{
-	int loop, loop_limit = 30;
-
-	if (dev == NULL) {
-		LOG_ERR("%s dev null", __func__);
-		return -EBUSY;
-	}
-
-	struct i2c_npcm4xx_data *const data = I2C_DRV_DATA(dev);
-	struct i2c_reg *const inst = I2C_INSTANCE(dev);
-
-	for (loop = 0; loop < loop_limit; loop ++) {
-		if (data->master_oper_state != I2C_NPCM4XX_OPER_STA_IDLE) {
-			k_busy_wait(1000);
-		} else {
-			inst->SMBnCTL2 &= ~BIT(NPCM4XX_SMBnCTL2_ENABLE);
-			break;
-		}
-	}
-
-	if (loop >= loop_limit) {
-		LOG_ERR("%s dev still busy!", __func__);
-		return -EBUSY;
-	}
-
-	return 0;
-}
-
 
 /* This macro should be set only when in Master mode or when requesting Master mode.
  * Set START bit to CTL1 register of I2C module, but exclude STOP bit, ACK bit.
@@ -429,6 +388,55 @@ static void i2c_npcm4xx_mutex_unlock(const struct device *dev)
 	struct i2c_npcm4xx_data *const data = I2C_DRV_DATA(dev);
 
 	k_sem_give(&data->lock_sem);
+}
+
+bool is_i2c_npcm_device_master_status_idle(const struct device *dev)
+{
+	if (dev == NULL) {
+		LOG_ERR("%s dev null", __func__);
+		return false;
+	}
+
+	struct i2c_npcm4xx_data *const data = I2C_DRV_DATA(dev);
+
+	return (data->master_oper_state == I2C_NPCM4XX_OPER_STA_IDLE);
+}
+
+int i2c_npcm_device_disable(const struct device *dev)
+{
+	int loop, loop_limit = 30;
+
+	if (dev == NULL) {
+		LOG_ERR("%s dev null", __func__);
+		return -EBUSY;
+	}
+
+	struct i2c_npcm4xx_data *const data = I2C_DRV_DATA(dev);
+	struct i2c_reg *const inst = I2C_INSTANCE(dev);
+
+	if (i2c_npcm4xx_mutex_lock(dev, I2C_WAITING_TIME) != 0) {
+		LOG_ERR("%s unable to lock", __func__);
+		return -EBUSY;
+	}
+
+	for (loop = 0; loop < loop_limit; loop ++) {
+		if (data->master_oper_state != I2C_NPCM4XX_OPER_STA_IDLE) {
+			k_busy_wait(1000);
+		} else {
+			inst->SMBnCTL2 &= ~BIT(NPCM4XX_SMBnCTL2_ENABLE);
+			break;
+		}
+	}
+
+	if (loop >= loop_limit) {
+		LOG_ERR("%s dev still busy!", __func__);
+		i2c_npcm4xx_mutex_unlock(dev);
+		return -EBUSY;
+	}
+
+	i2c_npcm4xx_mutex_unlock(dev);
+
+	return 0;
 }
 
 static void i2c_conf_slave(const struct device *dev, int index, uint8_t value)
@@ -1121,6 +1129,11 @@ static int i2c_npcm4xx_transfer(const struct device *dev, struct i2c_msg *msgs,
 
 	if (i2c_npcm4xx_mutex_lock(dev, I2C_WAITING_TIME) != 0)
 		return -EBUSY;
+
+	if (!(inst->SMBnCTL2 & BIT(NPCM4XX_SMBnCTL2_ENABLE))) {
+		i2c_npcm4xx_mutex_unlock(dev);
+		return -ENODEV;
+	}
 
 	for (i = 0; i < 3; i++) {
 		bus_busy = inst->SMBnCST & BIT(NPCM4XX_SMBnCST_BB);
