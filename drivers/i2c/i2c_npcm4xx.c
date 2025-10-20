@@ -1169,23 +1169,23 @@ static int i2c_npcm4xx_transfer(const struct device *dev, struct i2c_msg *msgs,
 	data->master_oper_state = I2C_NPCM4XX_OPER_STA_START;
 	data->err_code = 0;
 	if (i2c_npcm4xx_combine_msg(dev, msgs, num_msgs) < 0) {
-		i2c_npcm4xx_mutex_unlock(dev);
 		/* restore slave addr setting */
 		for (i = 0; i < I2C_SLAVE_NUM; i++) {
 			i2c_conf_slave(dev, i, data->value[i]);
 		}
+		i2c_npcm4xx_mutex_unlock(dev);
 		return -EPROTONOSUPPORT;
 	}
 
 	if (data->rx_cnt == 0 && data->tx_cnt == 0) {
 		/* Quick command */
 		if (num_msgs != 1) {
-			/* Quick command must have one msg */
-			i2c_npcm4xx_mutex_unlock(dev);
 			/* restore slave addr setting */
 			for (i = 0; i < I2C_SLAVE_NUM; i++) {
 				i2c_conf_slave(dev, i, data->value[i]);
 			}
+			/* Quick command must have one msg */
+			i2c_npcm4xx_mutex_unlock(dev);
 			return -EPROTONOSUPPORT;
 		}
 		if ((msgs->flags & I2C_MSG_RW_MASK) == I2C_MSG_WRITE) {
@@ -1220,12 +1220,12 @@ static int i2c_npcm4xx_transfer(const struct device *dev, struct i2c_msg *msgs,
 		ret = i2c_npcm4xx_recover_bus(dev);
 	}
 
-	i2c_npcm4xx_mutex_unlock(dev);
-
 	/* restore slave addr setting */
 	for (i = 0; i < I2C_SLAVE_NUM; i++) {
 		i2c_conf_slave(dev, i, data->value[i]);
 	}
+
+	i2c_npcm4xx_mutex_unlock(dev);
 
 	return ret;
 }
