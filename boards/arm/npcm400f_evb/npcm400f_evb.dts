@@ -631,3 +631,27 @@
 &c2h {
 	status = "okay";
 };
+
+&pwm1 {
+	pinctrl-0 = <&pinctrl_pwm1_default>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&pwm4 {
+	pinctrl-0 = <&pinctrl_pwm4_default>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&pwm5 {
+	pinctrl-0 = <&pinctrl_pwm5_default>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&pwm6 {
+	pinctrl-0 = <&pinctrl_pwm6_default>;
+	pinctrl-names = "default";
+	status = "okay";
+};
