@@ -40,6 +40,8 @@ struct pwm_npcm_config {
 	struct pwm_reg *base;
 	/* clock configuration */
 	struct npcm4xx_clk_cfg clk_cfg;
+	/* open-drain output */
+	bool is_open_drain;
 };
 
 /* Driver data */
@@ -76,6 +78,13 @@ static int pwm_npcm_configure(const struct device *dev, int clk_bus)
 	} else {
 		LOG_ERR("Support LFCLK and APB2 input clock source only");
 		return -EINVAL;
+	}
+
+	/* Configure open-drain output if requested */
+	if (config->is_open_drain) {
+			inst->PWMCTLEX |= BIT(NPCM4XX_PWMCTLEX_OD_OUT);
+	} else {
+			inst->PWMCTLEX &= ~BIT(NPCM4XX_PWMCTLEX_OD_OUT);
 	}
 
 	return 0;
@@ -221,6 +230,7 @@ static int pwm_npcm_init(const struct device *dev)
 	static const struct pwm_npcm_config pwm_npcm_cfg_##inst = {                     \
 		.base = (struct pwm_reg *)DT_INST_REG_ADDR(inst),                       \
 		.clk_cfg = NPCM4XX_DT_CLK_CFG_ITEM(inst),                               \
+		.is_open_drain = DT_INST_PROP(inst, drive_open_drain),                  \
 	};                                                                              \
 									                \
 	static struct pwm_npcm_data pwm_npcm_data_##inst;                               \
