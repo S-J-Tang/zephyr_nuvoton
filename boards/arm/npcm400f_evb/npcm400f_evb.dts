@@ -635,6 +635,7 @@
 &pwm1 {
 	pinctrl-0 = <&pinctrl_pwm1_default>;
 	pinctrl-names = "default";
+	drive-open-drain;
 	status = "okay";
 };
 
@@ -653,5 +654,6 @@
 &pwm6 {
 	pinctrl-0 = <&pinctrl_pwm6_default>;
 	pinctrl-names = "default";
+	drive-open-drain;
 	status = "okay";
 };

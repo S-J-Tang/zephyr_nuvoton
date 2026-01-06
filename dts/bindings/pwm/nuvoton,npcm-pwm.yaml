@@ -22,6 +22,11 @@ properties:
     type: string-array
     required: true
     description: pin configuration state names
+  drive-open-drain:
+    type: boolean
+    description: |
+      The PWM output will be configured as open-drain. If not set,
+      defaults to push-pull.
 
 pwm-cells:
   - channel
