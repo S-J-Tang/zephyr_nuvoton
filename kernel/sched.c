@@ -1221,10 +1221,12 @@ static int32_t z_tick_sleep(k_ticks_t ticks)
 #endif
 
 	/* wait of 0 ms is treated as a 'yield' */
+	/* if ticks is 0 -> sleep 1 ms
 	if (ticks == 0) {
 		k_yield();
 		return 0;
 	}
+	*/
 
 	k_timeout_t timeout = Z_TIMEOUT_TICKS(ticks);
 	if (Z_TICK_ABS(ticks) <= 0) {
