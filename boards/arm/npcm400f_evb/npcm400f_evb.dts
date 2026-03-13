@@ -639,6 +639,13 @@
 	status = "okay";
 };
 
+&pwm2 {
+	pinctrl-0 = <&pinctrl_pwm2_default>;
+	pinctrl-names = "default";
+	drive-open-drain;
+	status = "okay";
+};
+
 &pwm4 {
 	pinctrl-0 = <&pinctrl_pwm4_default>;
 	pinctrl-names = "default";
