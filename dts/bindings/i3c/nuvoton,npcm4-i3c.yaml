@@ -1,0 +1,86 @@
+# Copyright (c) 2026 Nuvoton Technology Corporation.
+# SPDX-License-Identifier: Apache-2.0
+
+description: NUVOTON I3C
+
+compatible: "nuvoton,npcm4-i3c"
+
+include: [i3c-controller.yaml, nuvoton-pinctrl.yaml]
+
+properties:
+  instance-id:
+    required: true
+    type: int
+    description: |
+      Instance ID of the device, used to specify port number
+
+  slave:
+    required: false
+    type: boolean
+    description: Initialized as slave (default) / master
+
+  secondary:
+    required: false
+    type: boolean
+    description: Initialized as a secondary master
+
+  assigned-address:
+    required: true
+    type: int
+    description: |
+      The default address of the device
+
+  part-id:
+    required: false
+    type: int
+    description: |
+      PID[31:16], used for bus enumeration with entdaa
+
+  vendor-def-id:
+    required: false
+    type: int
+    description: |
+      PID[11:0], used for bus enumeration with entdaa
+
+  bcr:
+    required: false
+    type: int
+    description: |
+      Bus Characteristics Register, used for bus enumeration with entdaa
+
+  dcr:
+    required: false
+    type: int
+    description: |
+      Device Characteristics Register, used for bus enumeration with entdaa
+
+  busno:
+    required: true
+    type: int
+    description: |
+      Bus Number, used for bus enumeration
+
+  dma-tx-channel:
+    required: true
+    type: int
+    description: |
+      dma channel for write data to bus
+
+  dma-rx-channel:
+    required: true
+    type: int
+    description: |
+      dma channel for read data from bus
+
+  hj-request-timeout-ms:
+    required: false
+    type: int
+    description: |
+      Timeout in milliseconds for the hot-join request. If not
+      sent within this period, the request is cancelled. If absent,
+      no timeout is applied.
+
+  pinctrl-0:
+    type: phandles
+    required: true
+    description: configurations of pinmux controllers
