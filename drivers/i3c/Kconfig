@@ -25,5 +25,6 @@ source "subsys/logging/Kconfig.template.log_config"
 source "drivers/i3c/slave/Kconfig"
 source "drivers/i3c/Kconfig.aspeed"
 source "drivers/i3c/Kconfig.npcm4xx"
+source "drivers/i3c/Kconfig.npcm4"
 
 endif # I3C
