@@ -502,6 +502,19 @@ static void i2c_npcm4xx_master_isr(const struct device *dev)
 	}
 #endif
 
+	if (inst->SMBnST & BIT(NPCM4XX_SMBnST_SLVSTP)) {
+		data->master_oper_state = I2C_NPCM4XX_OPER_STA_IDLE;
+		i2c_npcm4xx_reset_module(dev);
+		i2c_npcm4xx_notify(dev, -EAGAIN);
+		inst->SMBnST = BIT(NPCM4XX_SMBnST_SLVSTP);
+	}
+
+	if (inst->SMBnST & BIT(NPCM4XX_SMBnST_NMATCH)) {
+		data->master_oper_state = I2C_NPCM4XX_OPER_STA_IDLE;
+		i2c_npcm4xx_nack(dev);
+		inst->SMBnST = BIT(NPCM4XX_SMBnST_NMATCH);
+	}
+
 	/* --------------------------------------------- */
 	/* NACK occurred                                 */
 	/* --------------------------------------------- */
