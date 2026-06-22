@@ -35,8 +35,32 @@ struct i3c_slave_mqueue_obj {
 #define DEV_CFG(dev)			((struct i3c_slave_mqueue_config *)(dev)->config)
 #define DEV_DATA(dev)			((struct i3c_slave_mqueue_obj *)(dev)->data)
 
+
+static inline void setup_gpiob1(uint8_t val)
+{
+#define _SCFG_BASE 0x400C3000
+#define _GPIO_GROUP_B_BASE 0x40097000
+	// Pinmux
+	M8(_SCFG_BASE + 0x10) &= ~BIT(5);
+
+	// Data out
+	if (val) {
+		M8(_GPIO_GROUP_B_BASE) |= BIT(1);
+	} else {
+		M8(_GPIO_GROUP_B_BASE) &= ~BIT(1);
+	}
+
+	// DIR
+	M8(_GPIO_GROUP_B_BASE + 0x2) |= BIT(1);
+}
+
+#define MQUEUE_WRITE()   { setup_gpiob1(1); }
+#define MQUEUE_WRITE_DONE()    { setup_gpiob1(0); }
+
 static struct i3c_slave_payload *i3c_slave_mqueue_write_requested(const struct device *dev)
 {
+	MQUEUE_WRITE();
+
 	struct i3c_slave_mqueue_obj *obj = DEV_DATA(dev);
 
 	return obj->msg_curr;
@@ -65,6 +89,8 @@ static void i3c_slave_mqueue_write_done(const struct device *dev)
 		LOG_WRN("buffer overflow\n");
 		obj->out = (obj->out + 1) & (config->num_of_msgs - 1);
 	}
+
+	MQUEUE_WRITE_DONE();
 }
 
 static const struct i3c_slave_callbacks i3c_slave_mqueue_callbacks = {

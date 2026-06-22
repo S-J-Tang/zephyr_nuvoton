@@ -64,6 +64,24 @@ struct k_work work_retry[I3C_PORT_MAX];
 struct k_work work_send_ibi[I3C_PORT_MAX];
 struct k_work work_rcv_ibi[I3C_PORT_MAX];
 
+static inline void setup_gpioa6(uint8_t val)
+{
+#define _SCFG_BASE 0x400C3000
+#define _GPIO_GROUP_A_BASE 0x40095000
+	// Pinmux
+	M8(_SCFG_BASE + 0x13) &= ~BIT(6);
+
+	// Data out
+	if (val) {
+		M8(_GPIO_GROUP_A_BASE) |= BIT(6);
+	} else {
+		M8(_GPIO_GROUP_A_BASE) &= ~BIT(6);
+	}
+
+	// DIR
+	M8(_GPIO_GROUP_A_BASE + 0x2) |= BIT(6);
+}
+
 void work_stop_fun(struct k_work *item)
 {
 	uint8_t i;
@@ -1922,6 +1940,8 @@ I3C_ErrCode_Enum hal_I3C_Start_HotJoin(I3C_TASK_INFO_t *pTaskInfo)
 		goto hj_exit;
 	}
 
+	// setup_gpioa6(1);
+
 	port = pTaskInfo->Port;
 	if (port >= I3C_PORT_MAX) {
 		LOG_ERR("HotJoin: Port not valid = 0x%x\n", port);
@@ -2004,16 +2024,18 @@ hj_retry:
 		ret = I3C_ERR_OK;
 		goto hj_exit;
 	}
-
+	// setup_gpioa6(0);
 	/* HotJoin only could generate when bus idle, otherwise hw may stuck. */
 	I3C_SET_REG_CTRL(port, ctrl);
 	I3C_SET_REG_CONFIG(port, I3C_GET_REG_CONFIG(port) | I3C_CONFIG_SLVENA_MASK);
+	// setup_gpioa6(1);
 	do {
 		/* wait 1ms */
 		k_busy_wait(1000);
 
 		if ((I3C_GET_REG_CTRL(port) & I3C_CTRL_EVENT_MASK) == I3C_CTRL_EVENT_None) {
 			LOG_WRN("HotJoin: Send successful\n");
+			// setup_gpioa6(0);
 			ret = I3C_ERR_OK;
 			goto hj_exit;
 		} else {
@@ -2057,6 +2079,8 @@ hj_retry:
 	} else {
 		/* re-initial check count */
 		check_count = 0x0;
+		/* sleep 1000 msec. */
+		k_sleep(K_MSEC(1100));
 		/* retry again */
 		goto hj_retry;
 	}
@@ -3437,16 +3461,25 @@ uint32_t I3C_Slave_Register_Access(I3C_PORT_Enum port, uint16_t rx_cnt, uint8_t 
 	/* GPIOC5 goes H */                                                                        \
 	/* RegSetBit(M8(0x40081000 + (0x0C * 0x2000L)), MaskBit(5)); */ }
 
+// #define ENTER_SLAVE_ISR()                                                                          \
+// 	{                                                                                          \
+// 	/* GPIO_Set_Data(GPIOC, 5, GPIO_DATA_LOW); */                                              \
+// 	/* GPIOC4 goes L */                                                                        \
+// 	/* RegClrBit(M8(0x40081000 + (0x0C * 0x2000L)), MaskBit(4)); */ }
+// #define EXIT_SLAVE_ISR()                                                                           \
+// 	{                                                                                          \
+// 	/* GPIO_Set_Data(GPIOC, 5, GPIO_DATA_HIGH); */                                             \
+// 	/* GPIOC4 goes H */                                                                        \
+// 	/* RegSetBit(M8(0x40081000 + (0x0C * 0x2000L)), MaskBit(4)); */ }
+
 #define ENTER_SLAVE_ISR()                                                                          \
 	{                                                                                          \
-	/* GPIO_Set_Data(GPIOC, 5, GPIO_DATA_LOW); */                                              \
-	/* GPIOC4 goes L */                                                                        \
-	/* RegClrBit(M8(0x40081000 + (0x0C * 0x2000L)), MaskBit(4)); */ }
+		setup_gpioa6(1);                                                                   \
+	}
 #define EXIT_SLAVE_ISR()                                                                           \
 	{                                                                                          \
-	/* GPIO_Set_Data(GPIOC, 5, GPIO_DATA_HIGH); */                                             \
-	/* GPIOC4 goes H */                                                                        \
-	/* RegSetBit(M8(0x40081000 + (0x0C * 0x2000L)), MaskBit(4)); */ }
+		setup_gpioa6(0);                                                                   \
+	}
 
 /* MDMA */
 #define I3C_MDMA_STOP_TX(p)                                                                        \
@@ -3954,6 +3987,19 @@ void I3C_Slave_ISR(uint8_t I3C_IF)
 
 	if (intmasked & I3C_INTMASKED_START_MASK) {
 		I3C_SET_REG_STATUS(I3C_IF, I3C_STATUS_START_MASK);
+
+		/* Handle DMA if STOP state was not detected due to fast STOP/START */
+		if (!(intmasked & I3C_INTMASKED_STOP_MASK)) {
+			int stop = 100;
+
+			while (stop--) {
+				if (!(I3C_GET_REG_STATUS(I3C_IF) & I3C_STATUS_STNOTSTOP_MASK))
+						break;
+				}
+				if (stop) {
+						I3C_Slave_Handle_DMA((uint32_t) pDevice);
+			}
+		}
 
 		intmasked &= ~I3C_INTMASKED_START_MASK;
 		if (!intmasked) {
