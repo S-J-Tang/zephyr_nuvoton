@@ -9,7 +9,6 @@
 #include "i3c_slave.h"
 #include "hal_I3C.h"
 #include "i3c_drv.h"
-#include "api_i3c.h"
 
 I3C_REG_ITEM_t *pSlaveReg[I3C_PORT_MAX] = {
 	NULL,
@@ -28,12 +27,12 @@ I3C_REG_ITEM_t *pSlaveReg[I3C_PORT_MAX] = {
  * @return                          final task result
  */
 /*------------------------------------------------------------------------------*/
-__u32 I3C_Slave_Callback(__u32 TaskInfo, __u32 ErrDetail)
+static uint32_t I3C_Slave_Callback(uint32_t TaskInfo, uint32_t ErrDetail)
 {
 	I3C_TASK_INFO_t *pTaskInfo;
 	I3C_DEVICE_INFO_t *pDevice;
 	I3C_BUS_INFO_t *pBus;
-	__u32 ret;
+	uint32_t ret;
 
 	if (TaskInfo == 0) {
 		return I3C_ERR_PARAMETER_INVALID;
@@ -47,7 +46,7 @@ __u32 I3C_Slave_Callback(__u32 TaskInfo, __u32 ErrDetail)
 	} else if (ErrDetail == I3C_ERR_NACK_SLVSTART) {
 		return I3C_DO_NACK_SLVSTART(pTaskInfo);
 	} else if (ErrDetail == I3C_ERR_OK) {
-		if (pTaskInfo->callback != NULL) {
+		if (pTaskInfo->pCallback != NULL) {
 		}
 	}
 
@@ -62,7 +61,6 @@ __u32 I3C_Slave_Callback(__u32 TaskInfo, __u32 ErrDetail)
 	ret = pTaskInfo->result;
 	I3C_Complete_Task(pTaskInfo);
 	pBus->pCurrentTask = NULL;
-	pBus->busState = I3C_BUS_STATE_IDLE;
 	return ret;
 }
 
@@ -73,7 +71,7 @@ __u32 I3C_Slave_Callback(__u32 TaskInfo, __u32 ErrDetail)
  * @return                          result
  */
 /*------------------------------------------------------------------------------*/
-__u32 I3C_DO_NACK_SLVSTART(I3C_TASK_INFO_t *pTaskInfo)
+uint32_t I3C_DO_NACK_SLVSTART(I3C_TASK_INFO_t *pTaskInfo)
 {
 	I3C_DEVICE_INFO_t *pDevice;
 	I3C_BUS_INFO_t *pBus;
@@ -102,7 +100,7 @@ __u32 I3C_DO_NACK_SLVSTART(I3C_TASK_INFO_t *pTaskInfo)
  * @return                          none
  */
 /*------------------------------------------------------------------------------*/
-void I3C_Slave_Start_Request(__u32 Parm)
+void I3C_Slave_Start_Request(uint32_t Parm)
 {
 	I3C_TASK_INFO_t *pTaskInfo;
 	I3C_TRANSFER_TASK_t *pTask;
@@ -135,7 +133,7 @@ void I3C_Slave_Start_Request(__u32 Parm)
  * @return                          none
  */
 /*------------------------------------------------------------------------------*/
-void I3C_Slave_End_Request(__u32 Parm)
+void I3C_Slave_End_Request(uint32_t Parm)
 {
 	I3C_TRANSFER_TASK_t *pTask;
 	I3C_TASK_INFO_t *pTaskInfo;
@@ -146,7 +144,7 @@ void I3C_Slave_End_Request(__u32 Parm)
 
 	pTask = (I3C_TRANSFER_TASK_t *)Parm;
 	pTaskInfo = pTask->pTaskInfo;
-	I3C_Slave_Callback((__u32)pTaskInfo, pTaskInfo->result);
+	I3C_Slave_Callback((uint32_t)pTaskInfo, pTaskInfo->result);
 }
 
 /*------------------------------------------------------------------------------*/
@@ -158,10 +156,10 @@ void I3C_Slave_End_Request(__u32 Parm)
  * @return                          none
  */
 /*------------------------------------------------------------------------------*/
-I3C_ErrCode_Enum I3C_Slave_Prepare_Response(I3C_DEVICE_INFO_t *pDevice, __u16 wrLen, __u8 *pWrBuf)
+I3C_ErrCode_Enum I3C_Slave_Prepare_Response(I3C_DEVICE_INFO_t *pDevice, uint16_t wrLen, uint8_t *pWrBuf)
 {
 	I3C_ErrCode_Enum result;
-	__u8 *pTxBuf;
+	uint8_t *pTxBuf;
 
 	if (pDevice == NULL) {
 		return I3C_ERR_PARAMETER_INVALID;
@@ -170,7 +168,7 @@ I3C_ErrCode_Enum I3C_Slave_Prepare_Response(I3C_DEVICE_INFO_t *pDevice, __u16 wr
 		return I3C_ERR_PARAMETER_INVALID;
 	}
 
-	if (IS_Internal_DEVICE(pDevice) == FALSE) {
+	if (IS_Internal_DEVICE(pDevice) == false) {
 		return I3C_ERR_PARAMETER_INVALID;
 	}
 
@@ -179,7 +177,7 @@ I3C_ErrCode_Enum I3C_Slave_Prepare_Response(I3C_DEVICE_INFO_t *pDevice, __u16 wr
 		hal_I3C_Stop_Slave_TX(pDevice);
 	}
 
-	pTxBuf = (__u8 *)hal_I3C_MemAlloc(wrLen);
+	pTxBuf = (uint8_t *)hal_I3C_MemAlloc(wrLen);
 	if (pTxBuf == NULL) {
 		return I3C_ERR_OUT_OF_MEMORY;
 	}
@@ -192,13 +190,13 @@ I3C_ErrCode_Enum I3C_Slave_Prepare_Response(I3C_DEVICE_INFO_t *pDevice, __u16 wr
 	return Setup_Slave_Write_DMA(pDevice);
 }
 
-I3C_ErrCode_Enum I3C_Slave_Update_Pending(I3C_DEVICE_INFO_t *pDevice, __u8 mask)
+I3C_ErrCode_Enum I3C_Slave_Update_Pending(I3C_DEVICE_INFO_t *pDevice, uint8_t mask)
 {
 	if (pDevice == NULL) {
 		return I3C_ERR_PARAMETER_INVALID;
 	}
 
-	if (IS_Internal_DEVICE(pDevice) == FALSE) {
+	if (IS_Internal_DEVICE(pDevice) == false) {
 		return I3C_ERR_PARAMETER_INVALID;
 	}
 
@@ -215,7 +213,7 @@ I3C_ErrCode_Enum I3C_Slave_Finish_Response(I3C_DEVICE_INFO_t *pDevice)
 	if (pDevice == NULL)
 		return I3C_ERR_PARAMETER_INVALID;
 
-	if (IS_Internal_DEVICE(pDevice) == FALSE)
+	if (IS_Internal_DEVICE(pDevice) == false)
 		return I3C_ERR_PARAMETER_INVALID;
 
 	if (pDevice->txLen == 0)
@@ -235,13 +233,13 @@ I3C_ErrCode_Enum I3C_Slave_Finish_Response(I3C_DEVICE_INFO_t *pDevice)
 I3C_ErrCode_Enum I3C_Slave_Check_Response_Complete(I3C_DEVICE_INFO_t *pDevice)
 {
 	I3C_ErrCode_Enum result;
-	__u16 txNotSendLen;
+	uint16_t txNotSendLen;
 
 	if (pDevice == NULL) {
 		return I3C_ERR_PARAMETER_INVALID;
 	}
 
-	if (IS_Internal_DEVICE(pDevice) == FALSE) {
+	if (IS_Internal_DEVICE(pDevice) == false) {
 		return I3C_ERR_PARAMETER_INVALID;
 	}
 
@@ -263,7 +261,7 @@ I3C_ErrCode_Enum I3C_Slave_Check_Response_Complete(I3C_DEVICE_INFO_t *pDevice)
 	return I3C_ERR_PENDING;
 }
 
-I3C_ErrCode_Enum I3C_Slave_Check_IBIDIS(I3C_DEVICE_INFO_t *pDevice, _Bool *bRet)
+I3C_ErrCode_Enum I3C_Slave_Check_IBIDIS(I3C_DEVICE_INFO_t *pDevice, bool *bRet)
 {
 	uint8_t eventSupportMask;
 
@@ -274,15 +272,15 @@ I3C_ErrCode_Enum I3C_Slave_Check_IBIDIS(I3C_DEVICE_INFO_t *pDevice, _Bool *bRet)
 		return I3C_ERR_PARAMETER_INVALID;
 	}
 
-	if (IS_Internal_DEVICE(pDevice) == FALSE) {
+	if (IS_Internal_DEVICE(pDevice) == false) {
 		return I3C_ERR_PARAMETER_INVALID;
 	}
 
 	eventSupportMask = hal_I3C_get_event_support_status(pDevice->port);
 	if (eventSupportMask & DISEC_MASK_ENINT) {
-		*bRet = TRUE;
+		*bRet = true;
 	} else {
-		*bRet = FALSE;
+		*bRet = false;
 	}
 
 	return I3C_ERR_OK;
@@ -313,31 +311,6 @@ I3C_ErrCode_Enum Setup_Slave_Write_DMA(I3C_DEVICE_INFO_t *pDevice)
 		pDevice->txLen - pDevice->txOffset);
 	pDevice->txOffset = pDevice->txLen;
 
-	return I3C_ERR_OK;
-}
-
-/*------------------------------------------------------------------------------*/
-/**
- * @brief                           configure PDMA for slave read transfer
- * @param [in]      pDevice         Pointer to device object
- * @return                          none
- */
-/*------------------------------------------------------------------------------*/
-I3C_ErrCode_Enum Setup_Slave_Read_DMA(I3C_DEVICE_INFO_t *pDevice)
-{
-	if (pDevice == NULL) {
-		return I3C_ERR_PARAMETER_INVALID;
-	}
-	if (pDevice->port >= I3C_PORT_MAX) {
-		return I3C_ERR_TASK_INVALID;
-	}
-
-	if ((pDevice->rxLen - pDevice->rxOffset) == 0) {
-		return I3C_ERR_OK;
-	}
-
-	hal_I3C_DMA_Read(pDevice->port, pDevice->mode, &(pDevice->pRxBuf[pDevice->rxOffset]),
-		pDevice->rxLen - pDevice->rxOffset);
 	return I3C_ERR_OK;
 }
 
@@ -382,19 +355,19 @@ I3C_ErrCode_Enum Setup_Slave_IBI_DMA(I3C_DEVICE_INFO_t *pDevice)
 	return I3C_ERR_OK;
 }
 
-uint8_t I3C_Update_Dynamic_Address(__u32 Parm)
+uint8_t I3C_Update_Dynamic_Address(uint32_t Parm)
 {
 	I3C_PORT_Enum port;
 	I3C_DEVICE_INFO_t *pDevice;
 
 	port = (I3C_PORT_Enum)Parm;
-	pDevice = api_I3C_Get_INODE(port);
+	pDevice = I3C_Get_INODE(port);
 	pDevice->dynamicAddr = hal_i3c_get_dynamic_address(port);
-	pDevice->bRunI3C = (pDevice->dynamicAddr) ? TRUE : FALSE;
+	pDevice->bRunI3C = (pDevice->dynamicAddr) ? true : false;
 	return pDevice->dynamicAddr;
 }
 
-void I3C_Prepare_To_Read_Command(__u32 Parm)
+void I3C_Prepare_To_Read_Command(uint32_t Parm)
 {
 	uint8_t *pSlvRxBuf;
 	uint8_t idx;
@@ -403,7 +376,7 @@ void I3C_Prepare_To_Read_Command(__u32 Parm)
 		return;
 
 	I3C_PORT_Enum port = (I3C_PORT_Enum) Parm;
-	I3C_DEVICE_INFO_t *pDevice = api_I3C_Get_INODE(port);
+	I3C_DEVICE_INFO_t *pDevice = I3C_Get_INODE(port);
 
 	/* Prepare the other rx buffer to receive data from master
 	 * during processing the last received data

@@ -8,6 +8,7 @@
 
 #include <errno.h>
 #include <soc.h>
+#include <soc_common.h>
 #include <device.h>
 #include <devicetree.h>
 #include <drivers/i3c/i3c.h>
@@ -19,13 +20,6 @@
 #define DT_DRV_COMPAT nuvoton_npcm4xx_i3c
 
 #define I3C_1MHz_VAL_CONST		    1000000UL
-
-#define APB3_CLK                    96000000                    /** ARM Peripheral Bus 3    */
-
-#define I3C_CLOCK_FREQUENCY         APB3_CLK
-#define I3C_FCLOCK_FREQUENCY	    APB3_CLK
-#define I3C_CLOCK_SLOW_FREQUENCY	APB3_CLK
-#define I3C_CLOCK_SLOW_TC_FREQUENCY	APB3_CLK
 
 /*
  * define for register
@@ -58,21 +52,15 @@ struct i3c_ibi_status {
 	uint8_t ibi_status;
 };
 
-struct i3c_npcm4xx_cmd {
-	uint32_t cmd_lo;
-	uint32_t cmd_hi;
-	void *tx_buf;
-	void *rx_buf;
-	int tx_length;
-	int rx_length;
-	int ret;
-};
 struct i3c_npcm4xx_xfer {
 	int ret;
+	int tx_len;
 	int rx_len;
 	int ncmds;
-	struct i3c_npcm4xx_cmd *cmds;
-	struct k_sem sem;
+	struct k_spinlock lock;
+	bool abort;
+	bool complete;
+	struct k_sem xfer_complete;
 };
 
 struct i3c_npcm4xx_dev_priv {
@@ -96,6 +84,7 @@ struct i3c_npcm4xx_config {
 	struct i3c_reg *base;
 	uintptr_t pmc_base;
 	uint32_t irq;
+	struct npcm4xx_clk_cfg clk_cfg;
 	bool slave;
 	bool secondary;
 	uint32_t i3c_scl_hz;
@@ -117,14 +106,15 @@ struct i3c_npcm4xx_config {
 struct i3c_npcm4xx_obj {
 	const struct device *dev;
 	I3C_DEVICE_INFO_t *pDevice;
-	volatile __u8 task_count;
+	volatile uint8_t task_count;
 	struct I3C_TRANSFER_TASK *pTaskListHead;
 
-	struct i3c_npcm4xx_config *config;
+	const struct i3c_npcm4xx_config *config;
 	struct k_spinlock lock;
-	struct i3c_npcm4xx_xfer *curr_xfer;
 	struct k_work work;
 	bool sir_allowed_by_sw;
+	uint8_t hj_req;
+	enum npcm4xx_reset_reason rst_reason;
 	struct {
 		uint32_t ibi_status_correct :1;
 		uint32_t ibi_pec_force_enable :1;
@@ -148,9 +138,10 @@ struct i3c_npcm4xx_obj {
 	osEventFlagsId_t ibi_event;
 	osEventFlagsId_t data_event;
 	uint16_t extra_val;
+	uint32_t apb3_rate;
 };
 
-#define DEV_CFG(dev)			((struct i3c_npcm4xx_config *)(dev)->config)
+#define DEV_CFG(dev)			((const struct i3c_npcm4xx_config *)(dev)->config)
 #define DEV_DATA(dev)			((struct i3c_npcm4xx_obj *)(dev)->data)
 #define DESC_PRIV(desc)			((struct i3c_npcm4xx_dev_priv *)(desc)->priv_data)
 
@@ -387,6 +378,12 @@ enum I3C_MSTATUS_IBITYPE_Enum {
 	I3C_MSTATUS_IBITYPE_IBI = 1,
 	I3C_MSTATUS_IBITYPE_MstReq = 2,
 	I3C_MSTATUS_IBITYPE_HotJoin = 3,
+};
+
+enum I3C_HOT_JOIN_STATE_Enum {
+	I3C_HOT_JOIN_STATE_None = 0,
+	I3C_HOT_JOIN_STATE_Request = 1,
+	I3C_HOT_JOIN_STATE_Queue = 2,
 };
 
 enum I3C_MSTATUS_STATE_Enum {
