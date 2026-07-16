@@ -790,7 +790,11 @@ int i3c_npcm4_slave_put_read_data(const struct device *dev, struct i3c_slave_pay
 	/* Wait for bus STOP */
 	if (readl_poll_timeout(config->regs + I3C_STATUS, val,
 			       !(val & I3C_STATUS_STNOTSTOP), 0, 100000) != 0) {
-		LOG_ERR("%s: Bus is busy", __func__);
+		LOG_ERR("%s: Bus is busy (STATUS=0x%08x DYNADDR=0x%08x DATACTRL=0x%08x INTMASKED=0x%08x)",
+			__func__, readl(config->regs + I3C_STATUS),
+			readl(config->regs + I3C_DYNADDR),
+			readl(config->regs + I3C_DATACTRL),
+			readl(config->regs + I3C_INTMASKED));
 		return -EBUSY;
 	}
 
@@ -936,7 +940,7 @@ int i3c_npcm4_slave_hj_req(const struct device *dev)
 	LOG_DBG("Send HJ req");
 	if (i3c_npcm4_slave_get_dynamic_addr(dev, &addr) == 0) {
 		LOG_WRN("Dynamic address present = 0x%x\n", addr);
-		return 0;
+		return -EALREADY;
 	}
 
 	if (readl(config->regs + I3C_STATUS) & I3C_STATUS_HJDIS) {
@@ -964,7 +968,8 @@ int i3c_npcm4_slave_hj_req(const struct device *dev)
 		LOG_INF("HJ event timeout");
 		ret = -ETIMEDOUT;
 	} else {
-		LOG_INF("HJ event sent");
+		LOG_INF("HJ event sent, DYNADDR=0x%08x",
+			readl(config->regs + I3C_DYNADDR));
 	}
 
 	return ret;
