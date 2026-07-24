@@ -21,11 +21,19 @@ properties:
     scllt:
         type: int
         required: false
-        description: value from 5 to 255
+        description: fast mode (400K) SCL low time, value from 5 to 255
     sclht:
         type: int
         required: false
-        description: value from 5 to 255
+        description: fast mode (400K) SCL high time, value from 5 to 255
+    scllt_fp:
+        type: int
+        required: false
+        description: fast-plus mode (1M) SCL low time, value from 5 to 255
+    sclht_fp:
+        type: int
+        required: false
+        description: fast-plus mode (1M) SCL high time, value from 5 to 255
     multi-master:
         type: int
         required: false
