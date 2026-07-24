@@ -75,8 +75,10 @@ struct i2c_npcm4xx_config {
 	uint32_t default_bitrate;
 	uint8_t irq;                    /* i2c controller irq */
 	uint32_t wait_free_time;
-	uint32_t scllt;
-	uint32_t sclht;
+	uint32_t scllt;        /* fast mode (400K) SCL low time, 0 = auto */
+    uint32_t sclht;        /* fast mode (400K) SCL high time, 0 = auto */
+    uint32_t scllt_fp;     /* fast-plus mode (1M) SCL low time, 0 = auto */
+    uint32_t sclht_fp;     /* fast-plus mode (1M) SCL high time, 0 = auto */
 	uint8_t multi_master;
 };
 
@@ -314,6 +316,8 @@ static void i2c_npcm4xx_set_baudrate(const struct device *dev, uint32_t bus_freq
 			inst->SMBnCTL4 = 7;
 		}
 	} else {
+		uint32_t use_scllt, use_sclht;
+
 		if (reg_tmp < 5) {
 			reg_tmp = 5;
 		} else if (reg_tmp > 255) {
@@ -324,12 +328,25 @@ static void i2c_npcm4xx_set_baudrate(const struct device *dev, uint32_t bus_freq
 		inst->SMBnCTL3 |= BIT(NPCM4XX_SMBnCTL3_400K_MODE);
 		SET_FIELD(inst->SMBnCTL2, NPCM4XX_SMBnCTL2_SCLFRQ60_FIELD, 0);
 		SET_FIELD(inst->SMBnCTL3, NPCM4XX_SMBnCTL3_SCLFRQ87_FIELD, 0);
-		if ( (config->scllt == 0) || (config->sclht == 0) ) {
+		/* Pick the SCL timing set for the requested speed:
+		* fast-plus (> 400K, e.g. 1M) uses scllt_fp/sclht_fp,
+		* fast (400K) uses scllt/sclht. A value of 0
+		* means "not specified" and falls back to the computed value.
+		*/
+		if (bus_freq > 400000) {
+				use_scllt = config->scllt_fp;
+				use_sclht = config->sclht_fp;
+		} else {
+				use_scllt = config->scllt;
+				use_sclht = config->sclht;
+		}
+
+		if ( (use_scllt == 0) || (use_sclht == 0) ) {
 			inst->SMBnSCLHT = reg_tmp - 3;
 			inst->SMBnSCLLT = reg_tmp - 1;
 		} else {
-			inst->SMBnSCLHT = config->sclht;
-			inst->SMBnSCLLT = config->scllt;
+			inst->SMBnSCLHT = use_sclht;
+			inst->SMBnSCLLT = use_scllt;
 		}
 
 		/* Set HLDT (48MHz, HLDT = 17, Hold Time = 360ns) */
@@ -1287,6 +1304,10 @@ static const struct i2c_driver_api i2c_npcm4xx_driver_api = {
 				  0),	 		                         \
 		.sclht = DT_INST_PROP_OR(inst, sclht,		                 \
 				  0),	 		                         \
+		.scllt_fp = DT_INST_PROP_OR(inst, scllt_fp,                      \
+					0),                                            \
+		.sclht_fp = DT_INST_PROP_OR(inst, sclht_fp,                      \
+					0),												\
 		.multi_master = DT_INST_PROP_OR(inst, multi_master, 0),          \
 	};									 \
 										 \
