@@ -66,6 +66,7 @@ LOG_MODULE_REGISTER(i3c_npcm4);
 #define I3C_INTSET		0x010
 #define I3C_INTCLR		0x014
 #define I3C_INTMASKED		0x018
+#define I3C_ERRWARN		0x01C
 #define I3C_DMACTRL		0x020
 #define I3C_DATACTRL		0x02C
 #define   I3C_DATACTRL_FLUSHTB BIT(0)
@@ -608,7 +609,11 @@ static int i3c_npcm4_isr_tx_done(const struct device *dev)
 	tx_done_flag = BIT(config->dma_tx_channel);
 	if (readl_poll_timeout_atomic((uintptr_t)&config->pdma_base->TDSTS, val,
 				      (val & tx_done_flag) == tx_done_flag, 0, 1000) != 0) {
-		LOG_WRN("DMA transfer is not finished");
+		LOG_WRN("DMA transfer is not finished: TDSTS=0x%08x txlen=%u remain=%u",
+			val, obj->txlen, (uint32_t)FIELD_GET(GENMASK(29, 16), desc->CTL));
+		LOG_WRN("STATUS=0x%08x ERRWARN=0x%08x DATACTRL=0x%08x DYNADDR=0x%08x",
+			readl(config->regs + I3C_STATUS), readl(config->regs + I3C_ERRWARN),
+			readl(config->regs + I3C_DATACTRL), readl(config->regs + I3C_DYNADDR));
 		ret = -ETIMEDOUT;
 		goto err_quit;
 	}
@@ -665,7 +670,8 @@ static int i3c_npcm4_isr_receive_stop(const struct device *dev)
 	LOG_DBG("Received STOP: state=0x%x", obj->state);
 	val = readl(config->regs + I3C_STATUS);
 	if ((val & I3C_STATUS_MATCHED) == 0) {
-		LOG_INF("Address not matched: Status=0x%08x", val);
+		LOG_INF("Address not matched: Status=0x%08x DYNADDR=0x%08x ERRWARN=0x%08x", val,
+			readl(config->regs + I3C_DYNADDR), readl(config->regs + I3C_ERRWARN));
 		return 0;
 	}
 	/* Clear MATCHED */
@@ -879,13 +885,20 @@ int i3c_npcm4_slave_put_read_data(const struct device *dev, struct i3c_slave_pay
 	}
 
 	/* Wait for complete */
-	if (k_sem_take(&obj->complete, K_MSEC(3000)))
+	if (k_sem_take(&obj->complete, K_MSEC(3000))) {
 		ret = -ETIMEDOUT;
-	else if (obj->xfer_ret)
+		LOG_ERR("Send data timeout: no read from master in 3000 ms");
+	} else if (obj->xfer_ret) {
 		ret = obj->xfer_ret;
+	}
 
 	if (ret) {
-		LOG_ERR("Send data failed: %d", ret);
+		LOG_ERR("Send data failed: %d (size=%d ibi=%d dma=%d state=0x%x)", ret,
+			data->size, ibi_notify ? 1 : 0, obj->use_dma_tx, obj->state);
+		LOG_ERR("STATUS=0x%08x ERRWARN=0x%08x DATACTRL=0x%08x DYNADDR=0x%08x INTMASKED=0x%08x",
+			readl(config->regs + I3C_STATUS), readl(config->regs + I3C_ERRWARN),
+			readl(config->regs + I3C_DATACTRL), readl(config->regs + I3C_DYNADDR),
+			readl(config->regs + I3C_INTMASKED));
 		if (obj->use_dma_tx)
 			i3c_npcm4_stop_dma_tx(dev);
 		i3c_npcm4_rollback_event_state(dev);
