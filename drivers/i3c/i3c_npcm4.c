@@ -576,6 +576,26 @@ quit:
 	return 0;
 }
 
+/* Debug: GPIO20 is low while i3c_npcm4_slave_isr() is running */
+static inline void setup_gpio20(uint8_t val)
+{
+#define _SCFG_BASE 0x400C3000
+#define _GPIO_GROUP_2_BASE 0x40085000
+	// Pinmux
+	M8(_SCFG_BASE + 0x16) &= ~(BIT(7) | BIT(2));
+	M8(_SCFG_BASE + 0x1E) &= ~BIT(7);
+
+	// Data out
+	if (val) {
+		M8(_GPIO_GROUP_2_BASE) |= BIT(0);
+	} else {
+		M8(_GPIO_GROUP_2_BASE) &= ~BIT(0);
+	}
+
+	// DIR
+	M8(_GPIO_GROUP_2_BASE + 0x2) |= BIT(0);
+}
+
 static int i3c_npcm4_isr_tx_done(const struct device *dev)
 {
 	const struct i3c_npcm4_config *config = DEV_CFG(dev);
@@ -661,6 +681,35 @@ static int i3c_npcm4_isr_hj_event(const struct device *dev)
 	return 0;
 }
 
+/* Debug: GPIOB1 as scope trigger for "Address not matched" */
+static inline void setup_gpiob1(uint8_t val)
+{
+#define _SCFG_BASE 0x400C3000
+#define _GPIO_GROUP_B_BASE 0x40097000
+	// Pinmux
+	M8(_SCFG_BASE + 0x10) &= ~BIT(5);
+
+	// Data out
+	if (val) {
+		M8(_GPIO_GROUP_B_BASE) |= BIT(1);
+	} else {
+		M8(_GPIO_GROUP_B_BASE) &= ~BIT(1);
+	}
+
+	// DIR
+	M8(_GPIO_GROUP_B_BASE + 0x2) |= BIT(1);
+}
+
+/* Debug: snapshots of the last slave ISR entries, for "Address not matched" tracing */
+struct i3c_npcm4_isr_trace {
+	uint32_t cyc;
+	uint32_t intmasked;
+	uint32_t status;
+};
+#define ISR_TRACE_NUM	4
+static struct i3c_npcm4_isr_trace isr_trace[ISR_TRACE_NUM];
+static uint32_t isr_trace_idx;
+
 static int i3c_npcm4_isr_receive_stop(const struct device *dev)
 {
 	const struct i3c_npcm4_config *config = DEV_CFG(dev);
@@ -670,8 +719,21 @@ static int i3c_npcm4_isr_receive_stop(const struct device *dev)
 	LOG_DBG("Received STOP: state=0x%x", obj->state);
 	val = readl(config->regs + I3C_STATUS);
 	if ((val & I3C_STATUS_MATCHED) == 0) {
+		struct i3c_npcm4_isr_trace *cur, *prev;
+
+		setup_gpiob1(0);
+		cur = &isr_trace[(isr_trace_idx - 1) % ISR_TRACE_NUM];
+		prev = &isr_trace[(isr_trace_idx - 2) % ISR_TRACE_NUM];
 		LOG_INF("Address not matched: Status=0x%08x DYNADDR=0x%08x ERRWARN=0x%08x", val,
 			readl(config->regs + I3C_DYNADDR), readl(config->regs + I3C_ERRWARN));
+		LOG_INF("  cur  ISR: INTMASKED=0x%08x STATUS=0x%08x state=0x%x",
+			cur->intmasked, cur->status, obj->state);
+		LOG_INF("  prev ISR: INTMASKED=0x%08x STATUS=0x%08x, %u us before",
+			prev->intmasked, prev->status,
+			k_cyc_to_us_floor32(cur->cyc - prev->cyc));
+		/* Debug: keep GPIOB1 low for 50us so the LA can trigger on it */
+		k_busy_wait(50);
+		setup_gpiob1(1);
 		return 0;
 	}
 	/* Clear MATCHED */
@@ -715,7 +777,14 @@ static void i3c_npcm4_slave_isr(const struct device *dev)
 	const struct i3c_npcm4_config *config = DEV_CFG(dev);
 	struct i3c_npcm4_obj *obj = DEV_DATA(dev);
 	uint32_t status = readl(config->regs + I3C_INTMASKED);
+	struct i3c_npcm4_isr_trace *t;
 	int i;
+
+	setup_gpio20(0);
+	t = &isr_trace[isr_trace_idx++ % ISR_TRACE_NUM];
+	t->cyc = k_cycle_get_32();
+	t->intmasked = status;
+	t->status = readl(config->regs + I3C_STATUS);
 
 	LOG_DBG("status=0x%x", status);
 	for (i = IRQ_START; i <= IRQ_EVENT; i++) {
@@ -728,6 +797,7 @@ static void i3c_npcm4_slave_isr(const struct device *dev)
 				obj->isr_cb[(i - IRQ_START)](dev);
 		}
 	}
+	setup_gpio20(1);
 }
 
 /* Master mode API implementations */
@@ -1160,6 +1230,19 @@ static int i3c_npcm4_init(const struct device *dev)
 	int ret;
 
 	LOG_WRN("Built at:   %s %s", __DATE__, __TIME__);
+
+	/*
+	 * Debug: boot-time test pulses to verify the scope sees both pins.
+	 * GPIOB1 idles high (low pulse 100us), GPIO20 idles high (low pulse 300us).
+	 */
+	setup_gpiob1(1);
+	k_busy_wait(100);
+	setup_gpiob1(0);
+	k_busy_wait(100);
+	setup_gpiob1(1);
+	setup_gpio20(0);
+	k_busy_wait(300);
+	setup_gpio20(1);
 
 	/* Turn on device clock first and get source clock freq. */
 	ret = clock_control_on(clk_dev, (clock_control_subsys_t *)
