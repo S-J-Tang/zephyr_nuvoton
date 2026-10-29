@@ -596,6 +596,35 @@ static inline void setup_gpio20(uint8_t val)
 	M8(_GPIO_GROUP_2_BASE + 0x2) |= BIT(0);
 }
 
+/* Debug: GPIOB1 as scope trigger for "DMA transfer is not finished" */
+static inline void setup_gpiob1(uint8_t val)
+{
+#define _SCFG_BASE 0x400C3000
+#define _GPIO_GROUP_B_BASE 0x40097000
+	// Pinmux
+	M8(_SCFG_BASE + 0x10) &= ~BIT(5);
+
+	// Data out
+	if (val) {
+		M8(_GPIO_GROUP_B_BASE) |= BIT(1);
+	} else {
+		M8(_GPIO_GROUP_B_BASE) &= ~BIT(1);
+	}
+
+	// DIR
+	M8(_GPIO_GROUP_B_BASE + 0x2) |= BIT(1);
+}
+
+/* Debug: snapshots of the last slave ISR entries, for STOP/TX failure tracing */
+struct i3c_npcm4_isr_trace {
+	uint32_t cyc;
+	uint32_t intmasked;
+	uint32_t status;
+};
+#define ISR_TRACE_NUM	4
+static struct i3c_npcm4_isr_trace isr_trace[ISR_TRACE_NUM];
+static uint32_t isr_trace_idx;
+
 static int i3c_npcm4_isr_tx_done(const struct device *dev)
 {
 	const struct i3c_npcm4_config *config = DEV_CFG(dev);
@@ -629,11 +658,24 @@ static int i3c_npcm4_isr_tx_done(const struct device *dev)
 	tx_done_flag = BIT(config->dma_tx_channel);
 	if (readl_poll_timeout_atomic((uintptr_t)&config->pdma_base->TDSTS, val,
 				      (val & tx_done_flag) == tx_done_flag, 0, 1000) != 0) {
+		struct i3c_npcm4_isr_trace *cur, *prev;
+
+		setup_gpiob1(0);
+		cur = &isr_trace[(isr_trace_idx - 1) % ISR_TRACE_NUM];
+		prev = &isr_trace[(isr_trace_idx - 2) % ISR_TRACE_NUM];
 		LOG_WRN("DMA transfer is not finished: TDSTS=0x%08x txlen=%u remain=%u",
 			val, obj->txlen, (uint32_t)FIELD_GET(GENMASK(29, 16), desc->CTL));
 		LOG_WRN("STATUS=0x%08x ERRWARN=0x%08x DATACTRL=0x%08x DYNADDR=0x%08x",
 			readl(config->regs + I3C_STATUS), readl(config->regs + I3C_ERRWARN),
 			readl(config->regs + I3C_DATACTRL), readl(config->regs + I3C_DYNADDR));
+		LOG_WRN("  cur  ISR: INTMASKED=0x%08x STATUS=0x%08x state=0x%x",
+			cur->intmasked, cur->status, obj->state);
+		LOG_WRN("  prev ISR: INTMASKED=0x%08x STATUS=0x%08x, %u us before",
+			prev->intmasked, prev->status,
+			k_cyc_to_us_floor32(cur->cyc - prev->cyc));
+		/* Debug: keep GPIOB1 low for 50us so the LA can trigger on it */
+		k_busy_wait(50);
+		setup_gpiob1(1);
 		ret = -ETIMEDOUT;
 		goto err_quit;
 	}
@@ -681,35 +723,6 @@ static int i3c_npcm4_isr_hj_event(const struct device *dev)
 	return 0;
 }
 
-/* Debug: GPIOB1 as scope trigger for "Address not matched" */
-static inline void setup_gpiob1(uint8_t val)
-{
-#define _SCFG_BASE 0x400C3000
-#define _GPIO_GROUP_B_BASE 0x40097000
-	// Pinmux
-	M8(_SCFG_BASE + 0x10) &= ~BIT(5);
-
-	// Data out
-	if (val) {
-		M8(_GPIO_GROUP_B_BASE) |= BIT(1);
-	} else {
-		M8(_GPIO_GROUP_B_BASE) &= ~BIT(1);
-	}
-
-	// DIR
-	M8(_GPIO_GROUP_B_BASE + 0x2) |= BIT(1);
-}
-
-/* Debug: snapshots of the last slave ISR entries, for "Address not matched" tracing */
-struct i3c_npcm4_isr_trace {
-	uint32_t cyc;
-	uint32_t intmasked;
-	uint32_t status;
-};
-#define ISR_TRACE_NUM	4
-static struct i3c_npcm4_isr_trace isr_trace[ISR_TRACE_NUM];
-static uint32_t isr_trace_idx;
-
 static int i3c_npcm4_isr_receive_stop(const struct device *dev)
 {
 	const struct i3c_npcm4_config *config = DEV_CFG(dev);
@@ -721,19 +734,15 @@ static int i3c_npcm4_isr_receive_stop(const struct device *dev)
 	if ((val & I3C_STATUS_MATCHED) == 0) {
 		struct i3c_npcm4_isr_trace *cur, *prev;
 
-		setup_gpiob1(0);
 		cur = &isr_trace[(isr_trace_idx - 1) % ISR_TRACE_NUM];
 		prev = &isr_trace[(isr_trace_idx - 2) % ISR_TRACE_NUM];
-		LOG_INF("Address not matched: Status=0x%08x DYNADDR=0x%08x ERRWARN=0x%08x", val,
-			readl(config->regs + I3C_DYNADDR), readl(config->regs + I3C_ERRWARN));
-		LOG_INF("  cur  ISR: INTMASKED=0x%08x STATUS=0x%08x state=0x%x",
-			cur->intmasked, cur->status, obj->state);
-		LOG_INF("  prev ISR: INTMASKED=0x%08x STATUS=0x%08x, %u us before",
-			prev->intmasked, prev->status,
-			k_cyc_to_us_floor32(cur->cyc - prev->cyc));
-		/* Debug: keep GPIOB1 low for 50us so the LA can trigger on it */
-		k_busy_wait(50);
-		setup_gpiob1(1);
+		// LOG_INF("Address not matched: Status=0x%08x DYNADDR=0x%08x ERRWARN=0x%08x", val,
+		// 	readl(config->regs + I3C_DYNADDR), readl(config->regs + I3C_ERRWARN));
+		// LOG_INF("  cur  ISR: INTMASKED=0x%08x STATUS=0x%08x state=0x%x",
+		// 	cur->intmasked, cur->status, obj->state);
+		// LOG_INF("  prev ISR: INTMASKED=0x%08x STATUS=0x%08x, %u us before",
+		// 	prev->intmasked, prev->status,
+		// 	k_cyc_to_us_floor32(cur->cyc - prev->cyc));
 		return 0;
 	}
 	/* Clear MATCHED */
